@@ -1,0 +1,46 @@
+import pycuda.driver as cuda
+import pycuda.autoinit
+
+from tensorrt.parsers import uffparser
+import tensorrt as trt
+import uff
+import numpy as np
+
+# TRT_LOGGER = trt.Logger()
+
+output_name = "Operation/gen_image"
+uff_model = uff.from_tensorflow("output.pb", [output_name])
+
+G_LOGGER = trt.infer.ConsoleLogger(trt.infer.LogSeverity.ERROR)
+parser = uffparser.create_uff_parser()
+parser.register_input("Operation/inputs", (1, 1, 1), 0)
+parser.register_output(output_name)
+engine = trt.utils.uff_to_trt_engine(G_LOGGER, uff_model, parser, 1, 1 << 20)
+#engine = trt.utils.uff_file_to_trt_engine(G_LOGGER, uff_model, parser, 1, 1 << 20)
+parser.destroy()
+
+runtime = trt.infer.create_infer_runtime(G_LOGGER)
+context = engine.create_execution_context()
+
+inp = np.ones((1,1,1), dtype=np.float32)
+output = np.empty(1, dtype=np.float32)
+
+d_input = cuda.mem_alloc(inp.nbytes)
+d_output = cuda.mem_alloc(output.nbytes)
+
+bindings = [int(d_input), int(d_output)]
+
+#print(pycuda.autoinit.device.get_attributes())
+
+stream = cuda.Stream()
+
+cuda.memcpy_htod_async(d_input, inp.tobytes(), stream)
+context.enqueue(1, bindings, stream.handle, None)
+cuda.memcpy_dtoh_async(output, d_output, stream)
+stream.synchronize()
+
+print(output)
+
+context.destroy()
+engine.destroy()
+runtime.destroy()

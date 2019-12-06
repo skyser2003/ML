@@ -1,0 +1,17 @@
+{
+  "name": "tf_test",
+  "version": "0.0.0",
+  "description": "tf_test",
+  "main": "app.js",
+  "author": {
+    "name": "shjan"
+  },
+  "devDependencies": {
+    "@types/node": "^6.0.87",
+    "@types/pngjs": "^3.3.0"
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^0.6.1",
+    "pngjs": "^3.3.2"
+  }
+}
