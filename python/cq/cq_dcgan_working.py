@@ -1,5 +1,6 @@
 import datetime
 import random
+import os
 
 import tensorflow as tf
 from tensorflow import keras
@@ -49,7 +50,7 @@ class CqGAN:
         test_input_images = cq_dataset.get_ordered_batch(num_output_image, False)
         prr.save_pngs(test_input_images, num_channel, "input.png")
 
-        num_iter = 10000000000000000000
+        num_iter = int(os.getenv("num_iter", "10000000000000000000"))
         lr = 0.0002
         z_size = 256
         num_cat = output_num_x * output_num_y
