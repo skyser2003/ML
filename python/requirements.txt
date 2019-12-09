@@ -1,9 +1,6 @@
 numpy
-tensorflow-gpu==2.0.0b1
+tensorflow-gpu
 matplotlib
 scipy
 imageio
 scikit-image
-pytorch
-torchvision
-tensorboardX
