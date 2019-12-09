@@ -1,4 +1,4 @@
-# ML2
+# ML
 
 Tensorflow - DCGAN + InfoGAN + Improved WGAN
 
