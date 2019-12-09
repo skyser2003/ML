@@ -1,6 +1,6 @@
 import datetime
 import random
-from typing import Dict
+import os
 
 import tensorflow as tf
 from tensorflow import keras
@@ -27,13 +27,12 @@ class CqGAN:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
-        print(f"Number of GPUS: {len(gpus)}")
-
         cq_dataset = CqData(CqDataType.FACE, scale_down=scale)
         dataset = tf.data.Dataset.from_tensor_slices(cq_dataset.images) \
-            .shuffle(len(cq_dataset.images)) \
             .repeat() \
-            .batch(batch_size, drop_remainder=True)
+            .batch(batch_size)
+
+        data_it = iter(dataset)
 
         output_num_x = 8
         output_num_y = 8
@@ -51,7 +50,7 @@ class CqGAN:
         test_input_images = cq_dataset.get_ordered_batch(num_output_image, False)
         prr.save_pngs(test_input_images, num_channel, "input.png")
 
-        num_iter = 10000000000000000000
+        num_iter = int(os.getenv("num_iter", "10000000000000000000"))
         lr = 0.0002
         z_size = 256
         num_cat = output_num_x * output_num_y
@@ -64,26 +63,23 @@ class CqGAN:
         opt_g = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_g)
         opt_d = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_d)
 
-        strategy = tf.distribute.MirroredStrategy()
+        gen = Generator(4, img_width, img_height, num_channel)
+        disc = Discriminator(4, num_cat)
+        iwgan = IWGanLoss(disc)
 
-        with strategy.scope():
-            gen = Generator(4, img_width, img_height, num_channel)
-            disc = Discriminator(4, num_cat)
-            iwgan = IWGanLoss(disc)
+        input_g = Input(batch_size=batch_size, shape=z_size + num_cat, name="z")
+        input_d = Input(batch_size=batch_size, shape=(img_height, img_width, num_channel), name="real_images")
+        input_eps = Input(batch_size=batch_size, shape=(1, 1, 1), name="eps")
 
-            input_g = Input(batch_size=batch_size, shape=z_size + num_cat, name="z")
-            input_d = Input(batch_size=batch_size, shape=(img_height, img_width, num_channel), name="real_images")
-            input_eps = Input(batch_size=batch_size, shape=(1, 1, 1), name="eps")
+        disc_gen: tf.Tensor
+        disc_real: tf.Tensor
+        cat_output: tf.Tensor
 
-            disc_gen: tf.Tensor
-            disc_real: tf.Tensor
-            cat_output: tf.Tensor
+        with tf.GradientTape() as tape:
+            gen_images: tf.Tensor = gen(input_g)
 
-            with tf.GradientTape() as tape:
-                gen_images: tf.Tensor = gen(input_g)
-
-                x_pn = input_eps * input_d + (1 - input_eps) * gen_images
-                iwgan_loss = iwgan((tape, x_pn))
+            x_pn = input_eps * input_d + (1 - input_eps) * gen_images
+            iwgan_loss = iwgan((tape, x_pn))
 
         disc_gen, cat_output = disc(gen_images)
         disc_real, _ = disc(input_d)
@@ -91,8 +87,17 @@ class CqGAN:
         model_g = Model(inputs=[input_g], outputs=[disc_gen, cat_output])
         model_d = Model(inputs=[input_g, input_d, input_eps], outputs=[disc_gen, disc_real, iwgan_loss, cat_output])
 
-        dataset = strategy.experimental_distribute_dataset(dataset)
-        data_it = iter(dataset)
+        pos_y = np.ones((batch_size, 1))
+        neg_y = -pos_y
+
+        gen.trainable = True
+        disc.trainable = False
+        model_g.compile(opt_g, loss=[self.loss_gan, self.__get_loss_cat], target_tensors={"discriminator": pos_y})
+
+        gen.trainable = False
+        disc.trainable = True
+        model_d.compile(opt_d, loss=[self.loss_gan, self.loss_gan, self.loss_gan, self.__get_loss_cat],
+                        target_tensors={"discriminator": neg_y, "discriminator_1": pos_y, "tf_op_layer_mul_3": pos_y})
 
         # Summary
         summary_dir = "cq_log"
@@ -102,15 +107,6 @@ class CqGAN:
         loss_gen_summary = keras.metrics.Mean()
         loss_real_summary = keras.metrics.Mean()
         loss_cat_summary = keras.metrics.Mean()
-
-        metrics = {
-            "disc_gen": disc_gen_summary,
-            "disc_real": disc_real_summary,
-            "loss_gen": loss_gen_summary,
-            "loss_real": loss_real_summary,
-            "loss_cat": loss_cat_summary,
-            "iwgan_loss": keras.metrics.Mean()
-        }
 
         summary_writer.set_as_default()
 
@@ -123,11 +119,14 @@ class CqGAN:
         begin = datetime.datetime.now()
 
         for step in range(num_iter):
-            self.train_step(strategy, data_it, opt_g, opt_d, model_g, model_d, batch_size, z_size, num_cat, metrics)
+            loss_gen, loss_real, loss_cat = self.train_step(data_it, model_g, model_d, batch_size, z_size, num_cat)
 
             # Summary
             # disc_gen_summary.update_state(disc_gen)
             # disc_real_summary.update_state(disc_real)
+            loss_gen_summary.update_state(loss_gen)
+            loss_real_summary.update_state(loss_real)
+            loss_cat_summary.update_state(loss_cat)
 
             # Output
             if step % output_interval == 0 and step != 0:
@@ -141,73 +140,41 @@ class CqGAN:
                 output_images = output_images.numpy()
                 prr.save_pngs(output_images, num_channel, output_filename)
 
-                print(f"{output_count * output_interval} times done: {diff.total_seconds()}s passed, "
-                      f"loss_gen: {loss_gen_summary.result()}, "
-                      f"loss_real: {loss_real_summary.result()}, "
-                      f"loss_cat: {loss_cat_summary.result()}")
+                print(f"{output_count * output_interval} times done: {diff.total_seconds()}s passed")
 
             # Summary
             tf.summary.scalar("loss/disc_gen", disc_gen_summary.result(), step)
             tf.summary.scalar("loss/disc_real", disc_real_summary.result(), step)
             tf.summary.scalar("loss/loss_gen", loss_gen_summary.result(), step)
             tf.summary.scalar("loss/loss_real", loss_real_summary.result(), step)
-            tf.summary.scalar("loss/loss_iwgan", metrics["iwgan_loss"].result(), step)
             if num_cat != 0:
                 tf.summary.scalar("loss/loss_cat", loss_cat_summary.result(), step)
 
-            for metric in metrics.values():
-                metric.reset_states()
+            disc_gen_summary.reset_states()
+            disc_real_summary.reset_states()
+            loss_gen_summary.reset_states()
+            loss_real_summary.reset_states()
+            loss_cat_summary.reset_states()
 
-    @tf.function
-    def train_step(self, strategy: tf.distribute.Strategy, data_it, opt_g, opt_d, model_g: Model, model_d: Model,
-                   batch_size: int, z_size: int, num_cat: int, metrics: Dict[str, keras.metrics.Mean]):
+    def train_step(self, data_it, model_g: Model, model_d: Model, batch_size: int, z_size: int, num_cat: int):
         # Discriminate
-        def discriminate(batch_images: tf.Tensor):
-            train_vars = model_d.trainable_variables
-
-            batch_size = batch_images.shape[0]
-
-            eps = tf.random.uniform((batch_size, 1, 1, 1), 0, 1)
-            z_input, cat_input = self.__generate_z(batch_size, z_size, num_cat)
-
-            with tf.GradientTape() as tape:
-                disc_gen, disc_real, iwgan_loss, cat_output = model_d((z_input, batch_images, eps))
-                full_loss = -disc_gen + disc_real + iwgan_loss + self.__get_loss_cat(cat_input, cat_output)
-
-            grads = tape.gradient(full_loss, train_vars)
-            opt_d.apply_gradients(zip(grads, train_vars))
-
-            loss_real = full_loss
-
-            metrics["disc_gen"].update_state(disc_gen)
-            metrics["disc_real"].update_state(disc_real)
-            metrics["loss_real"].update_state(loss_real)
-            metrics["iwgan_loss"].update_state(iwgan_loss)
-
-        def generate():
-            train_vars = model_g.trainable_variables
-
-            z_input, cat_input = self.__generate_z(batch_size, z_size, num_cat)
-
-            with tf.GradientTape() as tape:
-                disc_gen, cat_output = model_g(z_input)
-
-                loss_gen = disc_gen
-                loss_cat = self.__get_loss_cat(cat_input, cat_output)
-
-                full_loss = loss_gen + loss_cat
-
-            grads = tape.gradient(full_loss, train_vars)
-            opt_g.apply_gradients(zip(grads, train_vars))
-
-            metrics["loss_gen"].update_state(loss_gen)
-            metrics["loss_cat"].update_state(loss_cat)
-
         for _ in range(3):
             batch_images = next(data_it)
-            strategy.experimental_run_v2(discriminate, args=(batch_images,))
+            eps = tf.random.uniform((batch_size, 1, 1, 1), 0, 1)
 
-        strategy.experimental_run_v2(generate)
+            z_input, cat_input = self.__generate_z(batch_size, z_size, num_cat)
+            losses_d = model_d.train_on_batch([z_input, batch_images, eps], [cat_input])
+
+            loss_real = losses_d[0]
+
+        # Generate
+        z_input, cat_input = self.__generate_z(batch_size, z_size, num_cat)
+        losses_g = model_g.train_on_batch([z_input], [cat_input])
+
+        loss_gen = losses_g[0]
+        loss_cat = losses_g[2]
+
+        return loss_gen, loss_real, loss_cat
 
     def __get_loss_cat(self, cat_input: tf.Tensor, cat_output: tf.Tensor):
         if cat_output.shape[1] == 0:
@@ -218,12 +185,15 @@ class CqGAN:
 
     def __generate_z(self, batch_size: int, z_size: int, num_cat: int):
         real_z = tf.random.normal([batch_size, z_size])
+        cat_input = np.zeros([batch_size, num_cat])
 
         if num_cat == 0:
-            cat_input = tf.zeros([batch_size, num_cat])
             return real_z, cat_input
         else:
-            cat_input = tf.eye(batch_size, num_cat)
+            for cat in cat_input:
+                rand_index = random.randint(0, num_cat - 1)
+                cat[rand_index] = 1
+
             return tf.concat([real_z, cat_input], 1), cat_input
 
     def __generate_fixed_z(self, batch_size, z_size: int, num_cat: int):
@@ -377,4 +347,4 @@ class IWGanLoss(Layer):
 
 if __name__ == "__main__":
     gan = CqGAN()
-    gan.run(32, "cq_output_dcgan")
+    gan.run(64, "cq_output_dcgan")
