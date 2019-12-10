@@ -98,7 +98,7 @@ class CqGAN:
         model_d.compile(opt_d, loss=[self.loss_gan, self.loss_gan, self.loss_gan, self.__get_loss_cat])
 
         # Summary
-        summary_dir = "cq_log"
+        summary_dir = os.getenv("log_dir", "cq_log")
         summary_writer = tf.summary.create_file_writer(summary_dir)
 
         metric_names = ["disc_gen", "disc_real", "loss_gen", "loss_real", "loss_cat"]
