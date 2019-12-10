@@ -91,12 +91,11 @@ class CqGAN:
 
         gen.trainable = True
         disc.trainable = False
-        model_g.compile(opt_g, loss=[self.loss_gan, self.__get_loss_cat], target_tensors={"discriminator": pos_y})
+        model_g.compile(opt_g, loss=[self.loss_gan, self.__get_loss_cat])
 
         gen.trainable = False
         disc.trainable = True
-        model_d.compile(opt_d, loss=[self.loss_gan, self.loss_gan, self.loss_gan, self.__get_loss_cat],
-                        target_tensors={"discriminator": neg_y, "discriminator_1": pos_y, "tf_op_layer_mul_3": pos_y})
+        model_d.compile(opt_d, loss=[self.loss_gan, self.loss_gan, self.loss_gan, self.__get_loss_cat])
 
         # Summary
         summary_dir = "cq_log"
@@ -119,7 +118,7 @@ class CqGAN:
         begin = datetime.datetime.now()
 
         for step in range(num_iter):
-            self.train_step(data_it, model_g, model_d, batch_size, z_size, num_cat, metrics)
+            self.train_step(data_it, model_g, model_d, batch_size, z_size, num_cat, pos_y, neg_y, metrics)
 
             # Output
             if step % output_interval == 0 and step != 0:
@@ -144,20 +143,20 @@ class CqGAN:
 
     @tf.function
     def train_step(self, data_it, model_g: Model, model_d: Model, batch_size: int, z_size: int, num_cat: int,
-                   metrics: Dict[str, tf.keras.metrics.Mean]):
+                   pos_y: tf.Tensor, neg_y: tf.Tensor, metrics: Dict[str, tf.keras.metrics.Mean]):
         # Discriminate
         for _ in range(3):
             batch_images = next(data_it)
             eps = tf.random.uniform((batch_size, 1, 1, 1), 0, 1)
 
             z_input, cat_input = self.__generate_z(batch_size, z_size, num_cat)
-            losses_d = model_d.train_on_batch([z_input, batch_images, eps], [cat_input])
+            losses_d = model_d.train_on_batch([z_input, batch_images, eps], [neg_y, pos_y, pos_y, cat_input])
 
             loss_real = losses_d[0]
 
         # Generate
         z_input, cat_input = self.__generate_z(batch_size, z_size, num_cat)
-        losses_g = model_g.train_on_batch([z_input], [cat_input])
+        losses_g = model_g.train_on_batch([z_input], [pos_y, cat_input])
 
         loss_gen = losses_g[0]
         loss_cat = losses_g[2]
