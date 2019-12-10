@@ -12,8 +12,6 @@ from tensorflow.python.keras.layers import Dense, Conv2DTranspose, Conv2D, Flatt
 from tensorflow.python.keras.models import Model
 from tensorflow.python.ops.summary_ops_v2 import graph
 
-import numpy as np
-
 import util.helper as helper
 import util.plot_utils as plot_utils
 from cq.cq_data import CqData, CqDataType, CqDataMode
@@ -88,7 +86,7 @@ class CqGAN:
         model_g = Model(inputs=[input_g], outputs=[disc_gen, cat_output])
         model_d = Model(inputs=[input_g, input_d, input_eps], outputs=[disc_gen, disc_real, iwgan_loss, cat_output])
 
-        pos_y = np.ones((batch_size, 1))
+        pos_y = tf.ones((batch_size, 1))
         neg_y = -pos_y
 
         gen.trainable = True
@@ -176,26 +174,28 @@ class CqGAN:
 
     def __generate_z(self, batch_size: int, z_size: int, num_cat: int):
         real_z = tf.random.normal([batch_size, z_size])
-        cat_input = np.zeros([batch_size, num_cat])
 
         if num_cat == 0:
+            cat_input = tf.zeros([batch_size, num_cat])
             return real_z, cat_input
         else:
-            for cat in cat_input:
-                rand_index = random.randint(0, num_cat - 1)
-                cat[rand_index] = 1
+            rand_indices = []
+            for _ in range(batch_size):
+                rand_index = tf.random.uniform((), 0, num_cat, dtype=tf.int32)
+                rand_indices.append(rand_index)
+
+            cat_input = tf.one_hot(rand_indices, num_cat)
 
             return tf.concat([real_z, cat_input], 1), cat_input
 
     def __generate_fixed_z(self, batch_size, z_size: int, num_cat: int):
         real_z = tf.random.normal([batch_size, z_size])
-        cat_input = np.zeros([batch_size, num_cat])
 
         if num_cat == 0:
+            cat_input = tf.zeros([batch_size, num_cat])
             return real_z, cat_input
         else:
-            np.fill_diagonal(cat_input, 1)
-
+            cat_input = tf.eye(batch_size, num_cat)
             return tf.concat([real_z, cat_input], 1), cat_input
 
     def loss_gan(self, y_label, y_pred):
