@@ -142,6 +142,7 @@ class CqGAN:
             for metric in metrics.values():
                 metric.reset_states()
 
+    @tf.function
     def train_step(self, data_it, model_g: Model, model_d: Model, batch_size: int, z_size: int, num_cat: int,
                    metrics: Dict[str, tf.keras.metrics.Mean]):
         # Discriminate
