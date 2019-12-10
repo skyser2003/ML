@@ -1,6 +1,7 @@
 import datetime
 import random
 import os
+from typing import Dict
 
 import tensorflow as tf
 from tensorflow import keras
@@ -102,11 +103,12 @@ class CqGAN:
         # Summary
         summary_dir = "cq_log"
         summary_writer = tf.summary.create_file_writer(summary_dir)
-        disc_gen_summary = keras.metrics.Mean()
-        disc_real_summary = keras.metrics.Mean()
-        loss_gen_summary = keras.metrics.Mean()
-        loss_real_summary = keras.metrics.Mean()
-        loss_cat_summary = keras.metrics.Mean()
+
+        metric_names = ["disc_gen", "disc_real", "loss_gen", "loss_real", "loss_cat"]
+
+        metrics: Dict[str, tf.keras.metrics.Mean] = {}
+        for metric_name in metric_names:
+            metrics[metric_name] = keras.metrics.Mean()
 
         summary_writer.set_as_default()
 
@@ -119,14 +121,7 @@ class CqGAN:
         begin = datetime.datetime.now()
 
         for step in range(num_iter):
-            loss_gen, loss_real, loss_cat = self.train_step(data_it, model_g, model_d, batch_size, z_size, num_cat)
-
-            # Summary
-            # disc_gen_summary.update_state(disc_gen)
-            # disc_real_summary.update_state(disc_real)
-            loss_gen_summary.update_state(loss_gen)
-            loss_real_summary.update_state(loss_real)
-            loss_cat_summary.update_state(loss_cat)
+            self.train_step(data_it, model_g, model_d, batch_size, z_size, num_cat, metrics)
 
             # Output
             if step % output_interval == 0 and step != 0:
@@ -143,20 +138,14 @@ class CqGAN:
                 print(f"{output_count * output_interval} times done: {diff.total_seconds()}s passed")
 
             # Summary
-            tf.summary.scalar("loss/disc_gen", disc_gen_summary.result(), step)
-            tf.summary.scalar("loss/disc_real", disc_real_summary.result(), step)
-            tf.summary.scalar("loss/loss_gen", loss_gen_summary.result(), step)
-            tf.summary.scalar("loss/loss_real", loss_real_summary.result(), step)
-            if num_cat != 0:
-                tf.summary.scalar("loss/loss_cat", loss_cat_summary.result(), step)
+            for metric_name, metric in metrics.items():
+                tf.summary.scalar(f"loss/{metric_name}", metric.result(), step)
 
-            disc_gen_summary.reset_states()
-            disc_real_summary.reset_states()
-            loss_gen_summary.reset_states()
-            loss_real_summary.reset_states()
-            loss_cat_summary.reset_states()
+            for metric in metrics.values():
+                metric.reset_states()
 
-    def train_step(self, data_it, model_g: Model, model_d: Model, batch_size: int, z_size: int, num_cat: int):
+    def train_step(self, data_it, model_g: Model, model_d: Model, batch_size: int, z_size: int, num_cat: int,
+                   metrics: Dict[str, tf.keras.metrics.Mean]):
         # Discriminate
         for _ in range(3):
             batch_images = next(data_it)
@@ -174,7 +163,9 @@ class CqGAN:
         loss_gen = losses_g[0]
         loss_cat = losses_g[2]
 
-        return loss_gen, loss_real, loss_cat
+        metrics["loss_real"].update_state(loss_real)
+        metrics["loss_gen"].update_state(loss_gen)
+        metrics["loss_cat"].update_state(loss_cat)
 
     def __get_loss_cat(self, cat_input: tf.Tensor, cat_output: tf.Tensor):
         if cat_output.shape[1] == 0:
