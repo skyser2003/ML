@@ -315,10 +315,6 @@ class IWGanLoss(Layer):
         super().__init__()
 
         self.disc = disc
-
-    def build(self, input_shape):
-        super().build(input_shape)
-
         self.flatten = Flatten()
 
     def call(self, inputs: keras.layers.Input, **kwargs):
