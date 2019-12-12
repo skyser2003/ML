@@ -328,6 +328,7 @@ class IWGanLoss(Layer):
 
         scale_fn = 10
         ddx = scale_fn * (grad - 1) ** 2
+        ddx = tf.expand_dims(ddx, 1)
 
         return ddx
 
