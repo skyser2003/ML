@@ -169,7 +169,7 @@ class CqGAN:
         if cat_output.shape[1] == 0:
             return 0.0
 
-        loss_cat = keras.backend.categorical_crossentropy(cat_input, cat_output, True, 1)
+        loss_cat = tf.nn.softmax_cross_entropy_with_logits(cat_input, cat_output, 1)
         return tf.reduce_mean(loss_cat)
 
     def __generate_z(self, batch_size: int, z_size: int, num_cat: int):
@@ -199,7 +199,7 @@ class CqGAN:
             return tf.concat([real_z, cat_input], 1), cat_input
 
     def loss_gan(self, y_label, y_pred):
-        return keras.backend.mean(y_label * y_pred)
+        return tf.reduce_mean(y_label * y_pred)
 
 
 class Generator(Layer):
