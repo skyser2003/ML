@@ -20,9 +20,8 @@ scale = 3
 
 
 @tf.function
-def train_step(strategy: tf.distribute.Strategy, data_it, opt_g, opt_d, disc: Model, gen: Model,
-               model_g: Model, model_d: Model, batch_size: int, z_size: int, num_cat: int,
-               metrics: Dict[str, keras.metrics.Mean]):
+def train_step(strategy: tf.distribute.Strategy, data_it, disc: Model, gen: Model, model_g: Model, model_d: Model,
+               batch_size: int, z_size: int, num_cat: int, metrics: Dict[str, keras.metrics.Mean]):
     # Discriminate
     def discriminate(batch_images: tf.Tensor):
         train_vars = disc.trainable_variables
@@ -37,7 +36,7 @@ def train_step(strategy: tf.distribute.Strategy, data_it, opt_g, opt_d, disc: Mo
             full_loss = -disc_gen + disc_real + iwgan_loss + CqGAN.get_loss_cat(cat_input, cat_output)
 
         grads = tape.gradient(full_loss, train_vars)
-        opt_d.apply_gradients(zip(grads, train_vars))
+        disc.optimizer.apply_gradients(zip(grads, train_vars))
 
         loss_real = full_loss
 
@@ -60,7 +59,7 @@ def train_step(strategy: tf.distribute.Strategy, data_it, opt_g, opt_d, disc: Mo
             full_loss = loss_gen + loss_cat
 
         grads = tape.gradient(full_loss, train_vars)
-        opt_g.apply_gradients(zip(grads, train_vars))
+        gen.optimizer.apply_gradients(zip(grads, train_vars))
 
         metrics["loss_gen"].update_state(loss_gen)
         metrics["loss_cat"].update_state(loss_cat)
@@ -157,8 +156,8 @@ class CqGAN:
         gen_model_dir = os.path.join(model_dir, "gen")
         disc_model_dir = os.path.join(model_dir, "disc")
 
-        gen_ckpt = tf.train.Checkpoint(model=gen, optimizer=opt_g)
-        disc_ckpt = tf.train.Checkpoint(model=disc, optimizer=opt_g)
+        gen_ckpt = tf.train.Checkpoint(model=gen, optimizer=gen.optimizer)
+        disc_ckpt = tf.train.Checkpoint(model=disc, optimizer=disc.optimizer)
 
         gen_ckpt_mgr = tf.train.CheckpointManager(gen_ckpt, gen_model_dir, max_to_keep=5)
         disc_ckpt_mgr = tf.train.CheckpointManager(disc_ckpt, disc_model_dir, max_to_keep=5)
@@ -205,8 +204,7 @@ class CqGAN:
         begin = datetime.datetime.now()
 
         for step in range(num_iter):
-            train_step(strategy, data_it, opt_g, opt_d, disc, gen, model_g, model_d, batch_size, z_size, num_cat,
-                       metrics)
+            train_step(strategy, data_it, disc, gen, model_g, model_d, batch_size, z_size, num_cat, metrics)
 
             # Output
             if step % output_interval == 0 and step != 0:
