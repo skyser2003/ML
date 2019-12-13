@@ -74,14 +74,12 @@ class CqGAN:
         disc_real: tf.Tensor
         cat_output: tf.Tensor
 
-        with tf.GradientTape() as tape:
-            gen_images: tf.Tensor = gen(input_g)
-
-            x_pn = input_eps * input_d + (1 - input_eps) * gen_images
-            iwgan_loss = iwgan((tape, x_pn))
-
+        gen_images: tf.Tensor = gen(input_g)
         disc_gen, cat_output = disc(gen_images)
         disc_real, _ = disc(input_d)
+
+        x_pn = input_eps * input_d + (1 - input_eps) * gen_images
+        iwgan_loss = iwgan(x_pn)
 
         model_g = Model(inputs=[input_g], outputs=[disc_gen, cat_output])
         model_d = Model(inputs=[input_g, input_d, input_eps], outputs=[disc_gen, disc_real, iwgan_loss, cat_output])
@@ -318,8 +316,11 @@ class IWGanLoss(Layer):
         self.flatten = Flatten()
 
     def call(self, inputs: keras.layers.Input, **kwargs):
-        tape, x_pn = inputs
-        disc_pn, _ = self.disc(x_pn)
+        x_pn = inputs
+
+        with tf.GradientTape() as tape:
+            tape.watch(x_pn)
+            disc_pn, _ = self.disc(x_pn)
 
         grad = tape.gradient(disc_pn, x_pn)
         grad = self.flatten(grad)
