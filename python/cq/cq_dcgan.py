@@ -1,5 +1,5 @@
+import os
 import datetime
-import random
 from typing import Dict
 
 import tensorflow as tf
@@ -115,7 +115,14 @@ class CqGAN:
         opt_g = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_g)
         opt_d = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_d)
 
-        strategy = tf.distribute.MirroredStrategy()
+        strategy_type = os.getenv("strategy_type", "mirror")
+
+        if strategy_type == "mirror":
+            strategy = tf.distribute.MirroredStrategy()
+        elif strategy_type == "tpu":
+            strategy = tf.distribute.experimental.TPUStrategy()
+        else:
+            raise Exception(f"Wrong strategy type: {strategy_type}")
 
         with strategy.scope():
             gen = Generator(4, img_width, img_height, num_channel)
