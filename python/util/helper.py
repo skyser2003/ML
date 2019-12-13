@@ -1,4 +1,4 @@
-import os, glob, random
+import os, glob, random, shutil
 import numpy as np
 
 
@@ -7,11 +7,15 @@ def percentage(cur, max):
 
 
 def clean_create_dir(dir):
-    os.makedirs(dir, exist_ok=True)
+    if os.path.exists(dir):
+        files = glob.glob(os.path.join(dir, "*"))
+        for file in files:
+            if os.path.isdir(file):
+                shutil.rmtree(file)
+            else:
+                os.remove(file)
 
-    files = glob.glob(dir + '/*')
-    for f in files:
-        os.remove(f)
+    os.makedirs(dir, exist_ok=True)
 
 
 def random_uniform(min, max, shape):
