@@ -120,6 +120,10 @@ class CqGAN:
         if strategy_type == "mirror":
             strategy = tf.distribute.MirroredStrategy()
         elif strategy_type == "tpu":
+            resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu=f"grpc://{os.environ['COLAB_TPU_ADDR']}")
+            tf.config.experimental_connect_to_host(resolver.master())
+            tf.tpu.experimental.initialize_tpu_system(resolver)
+
             strategy = tf.distribute.experimental.TPUStrategy()
         else:
             raise Exception(f"Wrong strategy type: {strategy_type}")
