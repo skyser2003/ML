@@ -95,13 +95,6 @@ class CqGAN:
         img_height = cq_dataset.get_image_height()
         num_channel = cq_dataset.get_channel_count()
 
-        helper.clean_create_dir(output_dir)
-        prr = plot_utils.Plot_Reproduce_Performance(output_dir, output_num_x, output_num_y, img_width, img_height,
-                                                    scale)
-
-        test_input_images = cq_dataset.get_ordered_batch(num_output_image, False)
-        prr.save_pngs(test_input_images, num_channel, "input.png")
-
         num_iter = int(os.getenv("num_iter", "10000000000000000000"))
         lr = 0.0002
         z_size = 256
@@ -131,6 +124,10 @@ class CqGAN:
         with strategy.scope():
             gen = Generator(4, img_width, img_height, num_channel)
             disc = Discriminator(4, num_cat)
+
+            gen.optimizer = opt_g
+            disc.optimizer = opt_d
+
             iwgan = IWGanLoss(disc)
 
             input_g = Input(batch_size=batch_size, shape=z_size + num_cat, name="z")
@@ -154,6 +151,35 @@ class CqGAN:
 
         dataset = strategy.experimental_distribute_dataset(dataset)
         data_it = iter(dataset)
+
+        # Model
+        model_dir = os.path.join(output_dir, "model_save")
+        gen_model_dir = os.path.join(model_dir, "gen")
+        disc_model_dir = os.path.join(model_dir, "disc")
+
+        gen_ckpt = tf.train.Checkpoint(model=gen, optimizer=opt_g)
+        disc_ckpt = tf.train.Checkpoint(model=disc, optimizer=opt_g)
+
+        gen_ckpt_mgr = tf.train.CheckpointManager(gen_ckpt, gen_model_dir, max_to_keep=5)
+        disc_ckpt_mgr = tf.train.CheckpointManager(disc_ckpt, disc_model_dir, max_to_keep=5)
+
+        gen_latest = gen_ckpt_mgr.latest_checkpoint
+        disc_latest = disc_ckpt_mgr.latest_checkpoint
+
+        if gen_latest:
+            gen_ckpt.restore(gen_latest)
+        if disc_latest:
+            disc_ckpt.restore(disc_latest)
+
+        # Image output
+        image_dir = os.path.join(output_dir, "images")
+
+        helper.clean_create_dir(image_dir)
+        prr = plot_utils.Plot_Reproduce_Performance(image_dir, output_num_x, output_num_y, img_width, img_height,
+                                                    scale)
+
+        test_input_images = cq_dataset.get_ordered_batch(num_output_image, False)
+        prr.save_pngs(test_input_images, num_channel, "input.png")
 
         # Summary
         summary_dir = "cq_log"
@@ -193,6 +219,9 @@ class CqGAN:
                 output_images = gen(z_fixed)
                 output_images = output_images.numpy()
                 prr.save_pngs(output_images, num_channel, output_filename)
+
+                gen_ckpt_mgr.save()
+                disc_ckpt_mgr.save()
 
                 print(f"{output_count * output_interval} times done: {diff.total_seconds()}s passed, "
                       f"loss_gen: {metrics['loss_gen'].result()}, "
@@ -245,7 +274,7 @@ class CqGAN:
         return tf.reduce_mean(y_label * y_pred)
 
 
-class Generator(Layer):
+class Generator(Model):
     def __init__(self, num_layer: int, width: int, height: int, num_channel: int):
         super().__init__()
 
@@ -303,7 +332,7 @@ class Generator(Layer):
         return output
 
 
-class Discriminator(Layer):
+class Discriminator(Model):
     def __init__(self, num_layer: int, num_cat: int):
         super().__init__()
 
