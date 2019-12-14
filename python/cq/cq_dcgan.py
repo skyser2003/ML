@@ -97,7 +97,7 @@ class CqGAN:
         num_iter = int(os.getenv("num_iter", "10000000000000000000"))
         lr = 0.0002
         z_size = 256
-        num_cat = output_num_x * output_num_y
+        num_cat = cq_dataset.get_count()
         # num_cat = 0
         output_interval = 100
 
