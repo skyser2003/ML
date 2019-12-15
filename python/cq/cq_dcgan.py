@@ -18,6 +18,10 @@ from cq.cq_data import CqData, CqDataType, CqDataMode
 # For FACE images
 scale = 3
 
+# Env variables
+num_iter = int(os.getenv("num_iter", "10000000000000000000"))
+strategy_type = os.getenv("strategy_type", "mirror")
+
 
 @tf.function
 def train_step(strategy: tf.distribute.Strategy, data_it, disc: Model, gen: Model, model_g: Model, model_d: Model,
@@ -94,7 +98,6 @@ class CqGAN:
         img_height = cq_dataset.get_image_height()
         num_channel = cq_dataset.get_channel_count()
 
-        num_iter = int(os.getenv("num_iter", "10000000000000000000"))
         lr = 0.0002
         z_size = 256
         num_cat = cq_dataset.get_count()
@@ -106,8 +109,6 @@ class CqGAN:
 
         opt_g = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_g)
         opt_d = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_d)
-
-        strategy_type = os.getenv("strategy_type", "mirror")
 
         if strategy_type == "mirror":
             strategy = tf.distribute.MirroredStrategy()
