@@ -23,6 +23,7 @@ scale = 3
 # Env variables
 num_iter = int(os.getenv("num_iter", "10000000000000000000"))
 strategy_type = os.getenv("strategy_type", "mirror")
+mode = os.getenv("mode", "train")  # train, predict
 
 
 @tf.function
@@ -75,6 +76,11 @@ def train_step(strategy: tf.distribute.Strategy, data_it, disc: Model, gen: Mode
         strategy.experimental_run_v2(discriminate, args=(batch_images,))
 
     strategy.experimental_run_v2(generate)
+
+
+@tf.function
+def predict_image(strategy: tf.distribute.Strategy, gen: Model, input_z: tf.Tensor):
+    return strategy.experimental_run_v2(lambda: gen(input_z))
 
 
 class CqGAN:
@@ -173,66 +179,90 @@ class CqGAN:
         if disc_latest:
             disc_ckpt.restore(disc_latest)
 
-        # Image output
-        image_dir = os.path.join(output_dir, "images")
+        if mode == "train":
+            # Image output
+            image_dir = os.path.join(output_dir, "images")
 
-        helper.clean_create_dir(image_dir)
-        prr = plot_utils.Plot_Reproduce_Performance(image_dir, output_num_x, output_num_y, img_width, img_height,
-                                                    scale)
+            helper.clean_create_dir(image_dir)
+            prr = plot_utils.Plot_Reproduce_Performance(image_dir, output_num_x, output_num_y, img_width, img_height,
+                                                        scale)
 
-        test_input_images = cq_dataset.get_ordered_batch(num_output_image, False)
-        prr.save_pngs(test_input_images, num_channel, "input.png")
-
-        # Summary
-        summary_dir = "cq_log"
-        summary_writer = tf.summary.create_file_writer(summary_dir)
-
-        metrics = {
-            "disc_gen": keras.metrics.Mean(),
-            "disc_real": keras.metrics.Mean(),
-            "loss_gen": keras.metrics.Mean(),
-            "loss_real": keras.metrics.Mean(),
-            "loss_cat": keras.metrics.Mean(),
-            "iwgan_loss": keras.metrics.Mean()
-        }
-
-        summary_writer.set_as_default()
-
-        graph(K.get_graph(), step=0)
-
-        # Test variables
-        z_fixed, cat_fixed = self.generate_fixed_z(num_output_image, z_size, num_cat)
-
-        # Begin training
-        begin = datetime.datetime.now()
-
-        for step in range(num_iter):
-            train_step(strategy, data_it, disc, gen, model_g, model_d, batch_size, z_size, num_cat, metrics)
-
-            # Output
-            if step % output_interval == 0 and step != 0:
-                now = datetime.datetime.now()
-                diff = now - begin
-                begin = now
-
-                output_count = step // output_interval
-                output_filename = f"output{output_count}.png"
-                output_images = gen(z_fixed)
-                output_images = output_images.numpy()
-                prr.save_pngs(output_images, num_channel, output_filename)
-
-                gen_ckpt_mgr.save()
-                disc_ckpt_mgr.save()
-
-                print(f"{output_count * output_interval} times done: {diff.total_seconds()}s passed, "
-                      f"loss_gen: {metrics['loss_gen'].result()}, "
-                      f"loss_real: {metrics['loss_real'].result()}, "
-                      f"loss_cat: {metrics['loss_cat'].result()}")
+            test_input_images = cq_dataset.get_ordered_batch(num_output_image, False)
+            prr.save_pngs(test_input_images, num_channel, "input.png")
 
             # Summary
-            for metric_name, metric in metrics.items():
-                tf.summary.scalar(f"loss/{metric_name}", metric.result(), step)
-                metric.reset_states()
+            summary_dir = "cq_log"
+            summary_writer = tf.summary.create_file_writer(summary_dir)
+
+            metrics = {
+                "disc_gen": keras.metrics.Mean(),
+                "disc_real": keras.metrics.Mean(),
+                "loss_gen": keras.metrics.Mean(),
+                "loss_real": keras.metrics.Mean(),
+                "loss_cat": keras.metrics.Mean(),
+                "iwgan_loss": keras.metrics.Mean()
+            }
+
+            summary_writer.set_as_default()
+
+            graph(K.get_graph(), step=0)
+
+            # Test variables
+            z_fixed, _, cat_fixed = self.generate_fixed_z(num_output_image, z_size, num_cat)
+
+            # Begin training
+            begin = datetime.datetime.now()
+
+            for step in range(num_iter):
+                train_step(strategy, data_it, disc, gen, model_g, model_d, batch_size, z_size, num_cat, metrics)
+
+                # Output
+                if step % output_interval == 0 and step != 0:
+                    now = datetime.datetime.now()
+                    diff = now - begin
+                    begin = now
+
+                    output_count = step // output_interval
+                    output_filename = f"output{output_count}.png"
+                    output_images = gen(z_fixed)
+                    output_images = output_images.numpy()
+                    prr.save_pngs(output_images, num_channel, output_filename)
+
+                    gen_ckpt_mgr.save()
+                    disc_ckpt_mgr.save()
+
+                    print(f"{output_count * output_interval} times done: {diff.total_seconds()}s passed, "
+                          f"loss_gen: {metrics['loss_gen'].result()}, "
+                          f"loss_real: {metrics['loss_real'].result()}, "
+                          f"loss_cat: {metrics['loss_cat'].result()}")
+
+                # Summary
+                for metric_name, metric in metrics.items():
+                    tf.summary.scalar(f"loss/{metric_name}", metric.result(), step)
+                    metric.reset_states()
+        elif mode == "predict":
+            # Image output
+            image_dir = os.path.join(output_dir, "predict_images")
+
+            helper.clean_create_dir(image_dir)
+            prr = plot_utils.Plot_Reproduce_Performance(image_dir, output_num_x, output_num_y, img_width, img_height,
+                                                        scale)
+
+            with strategy.scope():
+                fixed_z, real_z, _ = self.generate_nocat_z(batch_size, z_size, num_cat)
+                input_images = predict_image(strategy, gen, fixed_z).numpy()
+
+                prr.save_pngs(input_images, num_channel, "input.png")
+
+                for i in range(num_cat):
+                    cat_input = self.generate_fixed_cat(batch_size, num_cat, [i])
+                    input_z = tf.concat([real_z, cat_input], 1)
+
+                    gen_images = predict_image(strategy, gen, input_z)
+                    gen_images = gen_images.numpy()
+
+                    output_filename = f"output{i + 1}.png"
+                    prr.save_pngs(gen_images, num_channel, output_filename)
 
     @staticmethod
     def get_loss_cat(cat_input: tf.Tensor, cat_output: tf.Tensor):
@@ -244,7 +274,7 @@ class CqGAN:
 
     @staticmethod
     def generate_z(batch_size: int, z_size: int, num_cat: int, force_assign: List[int] = None):
-        real_z = tf.random.normal([batch_size, z_size])
+        real_z = CqGAN.generate_real_z(batch_size, z_size)
 
         if num_cat == 0:
             cat_input = tf.zeros([batch_size, num_cat])
@@ -256,24 +286,51 @@ class CqGAN:
                 cat_input_np[i][rand_index] = 1
 
             if force_assign is not None:
-                for force_index in force_assign:
-                    for row in cat_input_np:
-                        row[force_index] = 1
+                CqGAN.force_assign_cat(cat_input_np, force_assign)
 
             cat_input = tf.convert_to_tensor(cat_input_np)
 
-            return tf.concat([real_z, cat_input], 1), cat_input
+            return tf.concat([real_z, cat_input], 1), real_z, cat_input
 
     @staticmethod
-    def generate_fixed_z(batch_size, z_size: int, num_cat: int):
-        real_z = tf.random.normal([batch_size, z_size])
+    def generate_fixed_z(batch_size: int, z_size: int, num_cat: int):
+        real_z = CqGAN.generate_real_z(batch_size, z_size)
 
         if num_cat == 0:
-            cat_input = tf.zeros([batch_size, num_cat])
+            cat_input = CqGAN.generate_fixed_cat(batch_size, num_cat)
             return real_z, cat_input
         else:
             cat_input = tf.eye(batch_size, num_cat)
-            return tf.concat([real_z, cat_input], 1), cat_input
+            return tf.concat([real_z, cat_input], 1), real_z, cat_input
+
+    @staticmethod
+    def generate_nocat_z(batch_size: int, z_size: int, num_cat: int):
+        real_z = CqGAN.generate_real_z(batch_size, z_size)
+        cat_input = tf.zeros([batch_size, num_cat])
+
+        if num_cat == 0:
+            return real_z, cat_input
+        else:
+            return tf.concat([real_z, cat_input], 1), real_z, cat_input
+
+    @staticmethod
+    def generate_real_z(batch_size: int, z_size: int):
+        return tf.random.normal([batch_size, z_size])
+
+    @staticmethod
+    def generate_fixed_cat(batch_size: int, num_cat: int, force_assign: List[int] = None):
+        cat_input_np = np.eye(batch_size, num_cat, dtype=np.float32)
+
+        if force_assign is not None:
+            CqGAN.force_assign_cat(cat_input_np, force_assign)
+
+        return tf.convert_to_tensor(cat_input_np)
+
+    @staticmethod
+    def force_assign_cat(cat_input_np: np.ndarray, force_assign: List[int]):
+        for force_index in force_assign:
+            for row in cat_input_np:
+                row[force_index] = 1
 
     @staticmethod
     def loss_gan(y_label, y_pred):
