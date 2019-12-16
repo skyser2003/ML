@@ -36,7 +36,7 @@ def train_step(strategy: tf.distribute.Strategy, data_it, disc: Model, gen: Mode
         batch_size = batch_images.shape[0]
 
         eps = tf.random.uniform((batch_size, 1, 1, 1), 0, 1)
-        z_input, cat_input = CqGAN.generate_z(batch_size, z_size, num_cat)
+        z_input, _, cat_input = CqGAN.generate_z(batch_size, z_size, num_cat)
 
         with tf.GradientTape() as tape:
             disc_gen, disc_real, iwgan_loss, cat_output = model_d((z_input, batch_images, eps), training=True)
@@ -55,7 +55,7 @@ def train_step(strategy: tf.distribute.Strategy, data_it, disc: Model, gen: Mode
     def generate():
         train_vars = gen.trainable_variables
 
-        z_input, cat_input = CqGAN.generate_z(batch_size, z_size, num_cat)
+        z_input, _, cat_input = CqGAN.generate_z(batch_size, z_size, num_cat)
 
         with tf.GradientTape() as tape:
             disc_gen, cat_output = model_g(z_input, training=True)
