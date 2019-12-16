@@ -56,8 +56,7 @@ python/cq_output
 python/cq_output_lsgan
 python/cq_output_infogan
 python/cq_output_vae
-python/cq_output_dcgan
-python/cq_output_dcgan_old
+python/cq_output_dcgan_*
 python/save/*.pb
 python/save/train
 python/save/result_rt
