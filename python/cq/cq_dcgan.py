@@ -15,9 +15,6 @@ import util.helper as helper
 import util.plot_utils as plot_utils
 from cq.cq_data import CqData, CqDataType, CqDataMode
 
-# For FACE images
-scale = 3
-
 # Env variables
 num_iter = int(os.getenv("num_iter", "10000000000000000000"))
 strategy_type = os.getenv("strategy_type", "mirror")
@@ -82,14 +79,14 @@ def predict_image(strategy: tf.distribute.Strategy, gen: Model, input_z: tf.Tens
 
 
 class CqGAN:
-    def run(self, batch_size: int, output_dir: str):
+    def run(self, batch_size: int, output_dir: str, image_type: CqDataType, scale: int):
         gpus = tf.config.experimental.list_physical_devices("GPU")
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
         print(f"Number of GPUS: {len(gpus)}")
 
-        cq_dataset = CqData(CqDataType.FACE, scale_down=scale)
+        cq_dataset = CqData(image_type, scale_down=scale)
         dataset = tf.data.Dataset.from_tensor_slices(cq_dataset.images) \
             .shuffle(len(cq_dataset.images)) \
             .repeat() \
@@ -487,4 +484,4 @@ class IWGanLoss(Layer):
 
 if __name__ == "__main__":
     gan = CqGAN()
-    gan.run(64, "cq_output_dcgan")
+    gan.run(64, "cq_output_dcgan", CqDataType.FACE, 3)
