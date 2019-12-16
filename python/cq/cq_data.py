@@ -23,6 +23,7 @@ class CqDataMode(enum.IntEnum):
 
 class CqData:
     def __init__(self, type: CqDataType, mode=CqDataMode.NORMAL, max_data=-1, scale_down=1, nchw=False):
+        self.type = type
         self.images = []
         self.flat_images = []
         self.width = -1
@@ -77,6 +78,16 @@ class CqData:
             self.flat_images.append(np.ndarray.flatten(new_image))
 
             i += 1
+
+    def get_type_str(self):
+        if self.type == CqDataType.FACE:
+            return "face"
+        elif self.type == CqDataType.SD:
+            return "sd"
+        elif self.type == CqDataType.WHOLE:
+            return "whole"
+        else:
+            return "none"
 
     @staticmethod
     def remove_alpha(image):

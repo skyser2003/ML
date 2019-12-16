@@ -95,6 +95,8 @@ class CqGAN:
             .repeat() \
             .batch(batch_size, drop_remainder=True)
 
+        output_dir = f"{output_dir}_{cq_dataset.get_type_str()}"
+
         output_num_x = 8
         output_num_y = 8
 
