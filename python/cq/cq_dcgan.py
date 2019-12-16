@@ -248,9 +248,14 @@ class CqGAN:
 
             with strategy.scope():
                 fixed_z, real_z, _ = self.generate_nocat_z(batch_size, z_size, num_cat)
-                input_images = predict_image(strategy, gen, fixed_z).numpy()
+                fixed_cat_input = self.generate_fixed_cat(batch_size, num_cat)
+                fixed_z2 = tf.concat([real_z, fixed_cat_input], 1)
 
-                prr.save_pngs(input_images, num_channel, "input.png")
+                input_images1 = predict_image(strategy, gen, fixed_z).numpy()
+                input_images2 = predict_image(strategy, gen, fixed_z2).numpy()
+
+                prr.save_pngs(input_images1, num_channel, "input1.png")
+                prr.save_pngs(input_images2, num_channel, "input2.png")
 
                 for i in range(num_cat):
                     cat_input = self.generate_fixed_cat(batch_size, num_cat, [i])
