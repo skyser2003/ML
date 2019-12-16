@@ -11,8 +11,6 @@ from tensorflow.python.keras.layers import Dense, Conv2DTranspose, Conv2D, Flatt
 from tensorflow.python.keras.models import Model
 from tensorflow.python.ops.summary_ops_v2 import graph
 
-import numpy as np
-
 import util.helper as helper
 import util.plot_utils as plot_utils
 from cq.cq_data import CqData, CqDataType, CqDataMode
@@ -274,21 +272,18 @@ class CqGAN:
 
     @staticmethod
     def generate_z(batch_size: int, z_size: int, num_cat: int, force_assign: List[int] = None):
-        real_z = CqGAN.generate_real_z(batch_size, z_size)
+        real_z = tf.random.normal([batch_size, z_size])
 
         if num_cat == 0:
             cat_input = tf.zeros([batch_size, num_cat])
             return real_z, cat_input
         else:
-            cat_input_np = np.zeros((batch_size, num_cat), dtype=np.float32)
-            for i in range(batch_size):
-                rand_index = np.random.randint(num_cat)
-                cat_input_np[i][rand_index] = 1
+            rand_indices = []
+            for _ in range(batch_size):
+                rand_index = tf.random.uniform((), 0, num_cat, dtype=tf.int32)
+                rand_indices.append(rand_index)
 
-            if force_assign is not None:
-                CqGAN.force_assign_cat(cat_input_np, force_assign)
-
-            cat_input = tf.convert_to_tensor(cat_input_np)
+            cat_input = tf.one_hot(rand_indices, num_cat)
 
             return tf.concat([real_z, cat_input], 1), real_z, cat_input
 
@@ -319,18 +314,25 @@ class CqGAN:
 
     @staticmethod
     def generate_fixed_cat(batch_size: int, num_cat: int, force_assign: List[int] = None):
-        cat_input_np = np.eye(batch_size, num_cat, dtype=np.float32)
+        cat_input = tf.eye(batch_size, num_cat)
 
         if force_assign is not None:
-            CqGAN.force_assign_cat(cat_input_np, force_assign)
+            cat_input = CqGAN.force_assign_cat(cat_input, force_assign)
 
-        return tf.convert_to_tensor(cat_input_np)
+        return cat_input
 
     @staticmethod
-    def force_assign_cat(cat_input_np: np.ndarray, force_assign: List[int]):
+    def force_assign_cat(cat_input: tf.Tensor, force_assign: List[int]):
+        indices = []
+
         for force_index in force_assign:
-            for row in cat_input_np:
-                row[force_index] = 1
+            for i in range(cat_input.shape[0]):
+                indices.append((i, force_index))
+
+        ones = tf.ones((len(indices),))
+        indices = tf.convert_to_tensor(indices)
+
+        return tf.tensor_scatter_nd_update(cat_input, indices, ones)
 
     @staticmethod
     def loss_gan(y_label, y_pred):
