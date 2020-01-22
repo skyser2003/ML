@@ -24,7 +24,7 @@ class Plot_Reproduce_Performance():
 
         self.resize_factor = resize_factor
 
-    def save_pngs(self, images, num_channel, name='result.png'):
+    def get_pngs(self, images, num_channel):
         num_sample = self.n_img_x * self.n_img_y
 
         if self.nchw:
@@ -33,8 +33,10 @@ class Plot_Reproduce_Performance():
         else:
             images = images.reshape(num_sample, self.img_h, self.img_w, num_channel)
 
-        outputs = self._merge_pngs(images, [self.n_img_x, self.n_img_y])
+        return self._merge_pngs(images, [self.n_img_x, self.n_img_y])
 
+    def save_pngs(self, images, num_channel, name='result.png'):
+        outputs = self.get_pngs(images, num_channel)
         imsave(self.DIR + "/" + name, outputs)
 
     def save_single_image(self, image, num_channel, name="result.png"):
