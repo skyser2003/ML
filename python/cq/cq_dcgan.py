@@ -483,5 +483,7 @@ class IWGanLoss(Layer):
 
 
 if __name__ == "__main__":
+    output_dir = os.getenv("output_dir", "cq_output_dcgan")
+
     gan = CqGAN()
-    gan.run(64, "cq_output_dcgan", CqDataType.FACE, 3)
+    gan.run(64, output_dir, CqDataType.FACE, 3)
