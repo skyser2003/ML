@@ -112,8 +112,11 @@ class CqGAN:
         opt_g = keras.optimizers.Adam(lr)
         opt_d = keras.optimizers.Adam(lr)
 
-        opt_g = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_g)
-        opt_d = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_d)
+        # opt_g = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_g)
+        # opt_d = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_d)
+
+        # opt_g = tf.keras.mixed_precision.experimental.LossScaleOptimizer(opt_g, "dynamic")
+        # opt_d = tf.keras.mixed_precision.experimental.LossScaleOptimizer(opt_d, "dynamic")
 
         if strategy_type == "mirror":
             strategy = tf.distribute.MirroredStrategy()
