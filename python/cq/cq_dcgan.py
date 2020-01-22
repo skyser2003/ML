@@ -185,10 +185,7 @@ class CqGAN:
                                                         scale)
 
             test_input_images = cq_dataset.get_ordered_batch(num_output_image, False)
-            test_output_images = prr.get_pngs(test_input_images, num_channel)
-            test_output_images = tf.io.encode_jpeg(test_output_images)
-
-            tf.io.write_file(os.path.join(image_dir, "input.png"), test_output_images)
+            prr.save_pngs(test_input_images, num_channel, "input.png")
 
             # Summary
             summary_dir = "cq_log"
@@ -224,13 +221,9 @@ class CqGAN:
 
                     output_count = step // output_interval
                     output_filename = f"output{output_count}.png"
-
                     output_images = gen(z_fixed)
                     output_images = output_images.numpy()
-                    output_images = prr.get_pngs(output_images, num_channel)
-                    output_images = tf.io.encode_jpeg(output_images)
-
-                    tf.io.write_file(os.path.join(image_dir, output_filename), output_images)
+                    prr.save_pngs(output_images, num_channel, output_filename)
 
                     gen_ckpt_mgr.save()
                     disc_ckpt_mgr.save()
@@ -490,7 +483,5 @@ class IWGanLoss(Layer):
 
 
 if __name__ == "__main__":
-    output_dir = os.getenv("output_dir", "cq_output_dcgan")
-
     gan = CqGAN()
-    gan.run(64, output_dir, CqDataType.FACE, 3)
+    gan.run(64, "cq_output_dcgan", CqDataType.FACE, 3)
