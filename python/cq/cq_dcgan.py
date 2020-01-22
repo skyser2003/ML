@@ -181,11 +181,13 @@ class CqGAN:
             image_dir = os.path.join(output_dir, "images")
 
             helper.clean_create_dir(image_dir)
-            prr = plot_utils.Plot_Reproduce_Performance(image_dir, output_num_x, output_num_y, img_width, img_height,
-                                                        scale)
 
             test_input_images = cq_dataset.get_ordered_batch(num_output_image, False)
-            prr.save_pngs(test_input_images, num_channel, "input.png")
+            test_input_images = tf.convert_to_tensor(test_input_images)
+            test_input_images = CqGAN.convert_to_save_format(test_input_images, output_num_x, output_num_y, img_width,
+                                                             img_height, num_channel)
+
+            tf.io.write_file(os.path.join(image_dir, "input.png"), test_input_images)
 
             # Summary
             summary_dir = "cq_log"
@@ -221,9 +223,12 @@ class CqGAN:
 
                     output_count = step // output_interval
                     output_filename = f"output{output_count}.png"
+
                     output_images = gen(z_fixed)
-                    output_images = output_images.numpy()
-                    prr.save_pngs(output_images, num_channel, output_filename)
+                    output_images = CqGAN.convert_to_save_format(output_images, output_num_x, output_num_y, img_width,
+                                                                 img_height, num_channel)
+
+                    tf.io.write_file(os.path.join(image_dir, output_filename), output_images)
 
                     gen_ckpt_mgr.save()
                     disc_ckpt_mgr.save()
@@ -341,6 +346,15 @@ class CqGAN:
     @staticmethod
     def loss_gan(y_label, y_pred):
         return tf.reduce_mean(y_label * y_pred)
+
+    @staticmethod
+    def convert_to_save_format(images: tf.Tensor, num_output_x: int, num_output_y: int, img_width: int, img_height: int,
+                               num_channel: int):
+        images = tf.cast(images * 255, dtype=tf.uint8)
+        images = tf.reshape(images, [num_output_x, num_output_y, img_height, img_width, num_channel])
+        images = tf.transpose(images, [0, 2, 1, 3, 4])
+        images = tf.reshape(images, [num_output_x * img_height, num_output_y * img_width, num_channel])
+        return tf.image.encode_png(images)
 
 
 class Generator(Model):
