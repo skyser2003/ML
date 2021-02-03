@@ -230,6 +230,9 @@ class CqGAN:
 
                     tf.io.write_file(os.path.join(image_dir, output_filename), output_images)
 
+                    tf.saved_model.save(disc, disc_model_dir)
+                    tf.saved_model.save(gen, gen_model_dir)
+
                     gen_ckpt_mgr.save()
                     disc_ckpt_mgr.save()
 
