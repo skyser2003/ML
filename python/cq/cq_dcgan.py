@@ -68,14 +68,14 @@ def train_step(strategy: tf.distribute.Strategy, data_it, disc: Model, gen: Mode
 
     for _ in range(3):
         batch_images = next(data_it)
-        strategy.experimental_run_v2(discriminate, args=(batch_images,))
+        strategy.run(discriminate, args=(batch_images,))
 
-    strategy.experimental_run_v2(generate)
+    strategy.run(generate)
 
 
 @tf.function
 def predict_image(strategy: tf.distribute.Strategy, gen: Model, input_z: tf.Tensor):
-    return strategy.experimental_run_v2(lambda: gen(input_z))
+    return strategy.run(lambda: gen(input_z))
 
 
 class CqGAN:
@@ -112,8 +112,8 @@ class CqGAN:
         opt_g = keras.optimizers.Adam(lr)
         opt_d = keras.optimizers.Adam(lr)
 
-        opt_g = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_g)
-        opt_d = tf.train.experimental.enable_mixed_precision_graph_rewrite(opt_d)
+        opt_g = tf.keras.mixed_precision.LossScaleOptimizer(opt_g)
+        opt_d = tf.keras.mixed_precision.LossScaleOptimizer(opt_d)
 
         if strategy_type == "mirror":
             strategy = tf.distribute.MirroredStrategy()
@@ -171,10 +171,11 @@ class CqGAN:
         gen_latest = gen_ckpt_mgr.latest_checkpoint
         disc_latest = disc_ckpt_mgr.latest_checkpoint
 
-        if gen_latest:
-            gen_ckpt.restore(gen_latest)
-        if disc_latest:
-            disc_ckpt.restore(disc_latest)
+        with strategy.scope():
+            if gen_latest:
+                gen_ckpt.restore(gen_latest)
+            if disc_latest:
+                disc_ckpt.restore(disc_latest)
 
         if mode == "train":
             # Image output
