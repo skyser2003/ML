@@ -1,5 +1,5 @@
 numpy
-tensorflow-gpu
+tensorflow
 matplotlib
 scipy
 imageio
