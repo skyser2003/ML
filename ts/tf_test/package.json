@@ -11,7 +11,7 @@
     "@types/pngjs": "^3.3.0"
   },
   "dependencies": {
-    "@tensorflow/tfjs": "^0.6.1",
+    "@tensorflow/tfjs": "^4.5.0",
     "pngjs": "^3.3.2"
   }
 }
